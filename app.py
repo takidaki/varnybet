@@ -364,7 +364,7 @@ def get_user_bets(username):
 
 # MongoDB setup
 MONGODB_URI = "mongodb+srv://damirmikic20:takidaki19841989@varnybet.akthnb4.mongodb.net/?retryWrites=true&w=majority&appName=VarnyBet"  # Replace with your MongoDB connection string
-client = MongoClient(MONGODB_URI)
+client = MongoClient(MONGODB_URI, tls=True)
 db = client.varnybet  # Use the provided database name
 
 def clear_bet_slip():
