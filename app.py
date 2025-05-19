@@ -297,6 +297,19 @@ def create_user(username, password):
 
 def register_user():
     """Displays a registration form and creates a new user."""
+    st.markdown("""
+    <style>
+    /* Make label text white */
+    .stTextInput label {
+        color: white !important;
+    }
+    /* Make input text white */
+    .stTextInput input {
+        color: white !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     username = st.text_input("Username", key="register_username")
     password = st.text_input("Password", type="password", key="register_password")
     password_confirm = st.text_input("Confirm Password", type="password", key="register_password_confirm")
