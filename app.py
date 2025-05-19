@@ -352,6 +352,16 @@ def get_user_balance(username):
         st.error(f"Error getting user balance: {e}")
         return 0
 
+def get_user_bets(username):
+    """Retrieves the user's placed bets from MongoDB."""
+    try:
+        collection = db["bets"]
+        user_bets = list(collection.find({"username": username}))
+        return user_bets
+    except Exception as e:
+        st.error(f"Error getting user bets: {e}")
+        return []
+
 # MongoDB setup
 MONGODB_URI = "mongodb+srv://damirmikic20:takidaki19841989@varnybet.akthnb4.mongodb.net/?retryWrites=true&w=majority&appName=VarnyBet"  # Replace with your MongoDB connection string
 client = MongoClient(MONGODB_URI)
@@ -365,22 +375,16 @@ def remove_bet(index):
     st.session_state.bet_slip.pop(index)
     st.rerun()
 
-def get_user_bets(username):
-    """Retrieves the user's placed bets from MongoDB."""
-    try:
-        collection = db["bets"]
-        user_bets = list(collection.find({"username": username}))
-        return user_bets
-    except Exception as e:
-        st.error(f"Error getting user bets: {e}")
-        return []
-
 # Initialize bet_slip in session state
 if 'bet_slip' not in st.session_state:
     st.session_state.bet_slip = []
 
 # --- Streamlit App Layout ---
 st.markdown("<h1>VarnyBet</h1>", unsafe_allow_html=True)
+
+# Make the sidebar collapsible by default
+data_source_for_parsing = CSV_CONTENT  # Fallback to string content
+parsed_odds_data = parse_csv_data(data_source_for_parsing)
 
 if 'username' not in st.session_state:
     # Add registration and login forms
@@ -397,9 +401,6 @@ else:
         del st.session_state.username
         st.rerun()
 
-    # Make the sidebar collapsible by default
-    data_source_for_parsing = CSV_CONTENT  # Fallback to string content
-    parsed_odds_data = parse_csv_data(data_source_for_parsing)
     with st.sidebar:
         st.header("Bet Slip")
 
@@ -482,56 +483,56 @@ else:
             else:
                 st.info("No bets placed yet.")
 
-    if not parsed_odds_data:
-        st.warning("No valid player odds data found. Please check the CSV format or upload a valid file.")
-    else:
-        # Initialize bet_slip in session state
+if not parsed_odds_data:
+    st.warning("No valid player odds data found. Please check the CSV format or upload a valid file.")
+else:
+    # Initialize bet_slip in session state
 
-        def add_bet(player, odd_type, odd_value):
-            bet = {"player": player, "odd_type": odd_type, "odd_value": odd_value}
-            # Check if there's already a bet for this player
-            for i, existing_bet in enumerate(st.session_state.bet_slip):
-                if existing_bet['player'] == player:
-                    # Replace the existing bet with the new one
-                    st.session_state.bet_slip[i] = bet
-                    st.rerun()
-                    return
-            # If no existing bet, add the new bet
-            st.session_state.bet_slip.append(bet)
-            st.rerun()
+    def add_bet(player, odd_type, odd_value):
+        bet = {"player": player, "odd_type": odd_type, "odd_value": odd_value}
+        # Check if there's already a bet for this player
+        for i, existing_bet in enumerate(st.session_state.bet_slip):
+            if existing_bet['player'] == player:
+                # Replace the existing bet with the new one
+                st.session_state.bet_slip[i] = bet
+                st.rerun()
+                return
+        # If no existing bet, add the new bet
+        st.session_state.bet_slip.append(bet)
+        st.rerun()
 
-        team_icons = {
-            "Kvoteri": "👕",  # Shirt emoji for Kvoteri
-            "Gaucosi": "👚",  # Different shirt emoji for Gaucosi
-        }
+    team_icons = {
+        "Kvoteri": "👕",  # Shirt emoji for Kvoteri
+        "Gaucosi": "👚",  # Different shirt emoji for Gaucosi
+    }
 
-        for league, players in parsed_odds_data.items():
-            if not players:
-                continue
+    for league, players in parsed_odds_data.items():
+        if not players:
+            continue
 
-            st.markdown(f"<div class='league-header'>{league}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='league-header'>{league}</div>", unsafe_allow_html=True)
 
-            num_columns = 3  # Using 3 columns for a more compact view
-            cols = st.columns(num_columns)
-            col_idx = 0
+        num_columns = 3  # Using 3 columns for a more compact view
+        cols = st.columns(num_columns)
+        col_idx = 0
 
-            for player_bet in players:
-                # Cycle through columns
-                current_col = cols[col_idx % num_columns]
-                with current_col:
-                    team_icon = team_icons.get(player_bet['team'], "")  # Get team icon or empty string
-                    st.markdown(f"""
-                        <div class='bet-card'>
-                            <div class='match-info'>{player_bet['date']} - {player_bet['time']}</div>
-                            <div class='player-name'><span class='team-icon'>{team_icon}</span>{player_bet['player']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+        for player_bet in players:
+            # Cycle through columns
+            current_col = cols[col_idx % num_columns]
+            with current_col:
+                team_icon = team_icons.get(player_bet['team'], "")  # Get team icon or empty string
+                st.markdown(f"""
+                    <div class='bet-card'>
+                        <div class='match-info'>{player_bet['date']} - {player_bet['time']}</div>
+                        <div class='player-name'><span class='team-icon'>{team_icon}</span>{player_bet['player']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                    if st.button(f"MANJE {player_bet['gr']:.1f} - {player_bet['under_odd']:.2f}", key=f"under_{player_bet['player']}_{col_idx}"):
-                        add_bet(player_bet['player'], "Under", player_bet['under_odd'])
-                    if st.button(f"VIŠE {player_bet['gr']:.1f} - {player_bet['over_odd']:.2f}", key=f"over_{player_bet['player']}_{col_idx}"):
-                        add_bet(player_bet['player'], "Over", player_bet['over_odd'])
-                    col_idx += 1
+                if st.button(f"MANJE {player_bet['gr']:.1f} - {player_bet['under_odd']:.2f}", key=f"under_{player_bet['player']}_{col_idx}"):
+                    add_bet(player_bet['player'], "Under", player_bet['under_odd'])
+                if st.button(f"VIŠE {player_bet['gr']:.1f} - {player_bet['over_odd']:.2f}", key=f"over_{player_bet['player']}_{col_idx}"):
+                    add_bet(player_bet['player'], "Over", player_bet['over_odd'])
+                col_idx += 1
 
     # --- Footer ---
     st.markdown("---")
