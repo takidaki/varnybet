@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 import hashlib
 
 # --- Configuration and Styling ---
@@ -303,9 +304,9 @@ def register_user():
     .stTextInput label {
         color: white !important;
     }
-    /* Make input text white */
+    /* Make input text black */
     .stTextInput input {
-        color: white !important;
+        color: black !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -364,8 +365,9 @@ def get_user_bets(username):
 
 # MongoDB setup
 MONGODB_URI = "mongodb+srv://damirmikic20:takidaki19841989@varnybet.akthnb4.mongodb.net/?retryWrites=true&w=majority&appName=VarnyBet"  # Replace with your MongoDB connection string
-client = MongoClient(MONGODB_URI, tls=True)
-db = client.varnybet  # Use the provided database name
+client = MongoClient(MONGODB_URI, server_api=ServerApi('1'))
+db = client["VarnyBet"]
+
 
 def clear_bet_slip():
     st.session_state.bet_slip = []
