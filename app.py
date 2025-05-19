@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import io
+from pymongo import MongoClient
+import hashlib
 
 # --- Configuration and Styling ---
 st.set_page_config(layout="wide", page_title="VarnyBet")
@@ -143,6 +145,22 @@ GLOBAL_STYLE = """
             background-color: #4A5568;
             transform: translateY(-1px);
         }
+        .team-icon {
+            font-size: 1.2em;
+            margin-right: 5px;
+        }
+
+        /* Mobile-specific styles */
+        @media screen and (max-width: 768px) {
+            .bet-slip {
+                padding: 10px;
+                margin-bottom: 10px;
+            }
+            .bet-slip-item {
+                font-size: 0.8em;
+                margin-bottom: 5px;
+            }
+        }
     </style>
 """
 st.markdown(GLOBAL_STYLE, unsafe_allow_html=True)
@@ -152,21 +170,21 @@ CSV_CONTENT = """Datum;Vreme;Sifra;Domacin;Gost;1;X;2;GR;U;O;Yes;No
 MATCH_NAME:Xtip Strelci;;;;;;;;;;;;
 LEAGUE_NAME: Kvoteri;;;;;;;;;;;;
 19.5.2025;20:00;;Varnicic D.;;;;;2,5;1,9;1,8;;
-19.5.2025;20:00;;Jajcevic D.;;;;;1,5;2;1,7;;
-19.5.2025;20:00;;Mikic D.;;;;;0,5;1,7;2,0;;
-19.5.2025;20:00;;Petkovic J.;;;;;1,5;1,7;2;;
-19.5.2025;20:00;;Trifunovic A.;;;;;1,5;1,85;1,85;;
-19.5.2025;20:00;;Marjanovic M.;;;;;1,5;1,8;1,9;;
-19.5.2025;20:00;;;;;;;;;;;
+170 | 19.5.2025;20:00;;Jajcevic D.;;;;;1,5;2;1,7;;
+171 | 19.5.2025;20:00;;Mikic D.;;;;;0,5;1,7;2,0;;
+172 | 19.5.2025;20:00;;Petkovic J.;;;;;1,5;1,7;2;;
+173 | 175 | 19.5.2025;20:00;;Trifunovic A.;;;;;1,5;1,85;1,85;;
+174 | 176 | 19.5.2025;20:00;;Marjanovic M.;;;;;1,5;1,8;1,9;;
+175 | 177 | 19.5.2025;20:00;;;;;;;;;;;
 LEAGUE_NAME: Gaucosi;;;;;;;;;;;;
-19.5.2025;20:00;;Jakovljevic M.;;;;;1,5;1,85;1,85;;
-19.5.2025;20:00;;Jovanovic N.;;;;;0,5;2,2;1,6;;
-19.5.2025;20:00;;Bocarac N.;;;;;2,5;1,75;1,95;;
-19.5.2025;20:00;;Lozo N.;;;;;0,5;1,85;1,85;;
-19.5.2025;20:00;;Cmiljanic A.;;;;;0,5;1,85;1,85;;
-19.5.2025;20:00;;Jukovic H.;;;;;1,5;1,75;1,95;;
-19.5.2025;20:00;;Prodanov B.;;;;;0,5;1,8;1,9;;
-"""
+177 | 179 | 19.5.2025;20:00;;Jakovljevic M.;;;;;1,5;1,85;1,85;;
+178 | 180 | 19.5.2025;20:00;;Jovanovic N.;;;;;0,5;2,2;1,6;;
+179 | 181 | 19.5.2025;20:00;;Bocarac N.;;;;;2,5;1,75;1,95;;
+180 | 182 | 19.5.2025;20:00;;Lozo N.;;;;;0,5;1,85;1,85;;
+181 | 183 | 19.5.2025;20:00;;Cmiljanic A.;;;;;0,5;1,85;1,85;;
+182 | 184 | 19.5.2025;20:00;;Jukovic H.;;;;;1,5;1,75;1,95;;
+183 | 185 | 19.5.2025;20:00;;Prodanov B.;;;;;0,5;1,8;1,9;;
+184 | 186 | """
 
 # --- Helper Functions ---
 def parse_csv_data(input_source):
@@ -186,9 +204,9 @@ def parse_csv_data(input_source):
             # For safety, especially if the object could be reused, reset pointer.
             # However, Streamlit usually provides a fresh object or one that can be reread.
             if hasattr(input_source, 'seek'):
-                input_source.seek(0) 
+                input_source.seek(0)
             data_stream = input_source
-        
+
         # Read the CSV, using generic column names as header is not standard
         df = pd.read_csv(data_stream, sep=';', header=None, skip_blank_lines=True)
         df = df.astype(str) # Treat all data as string initially
@@ -250,111 +268,258 @@ def parse_csv_data(input_source):
                         "player": player_name,
                         "gr": gr_val,
                         "under_odd": under_odd,
-                        "over_odd": over_odd
+                        "over_odd": over_odd,
+                        "team": current_league # Add team information
                     })
                 except ValueError:
                     # Skip rows with non-convertible number formats silently
-                    pass 
+                    pass
         except IndexError:
             # Skip rows with fewer columns than expected
             pass
         except Exception:
             # Skip other unexpected errors for a specific row
             pass
-            
+
     return leagues_data
+
+def create_user(username, password):
+    """Hashes the password and stores the username, hashed password, and initial balance in MongoDB."""
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    user_data = {"username": username, "password": hashed_password, "balance": 500}
+    try:
+        collection = db["users"]
+        collection.insert_one(user_data)
+        return True
+    except Exception as e:
+        st.error(f"Error creating user: {e}")
+        return False
+
+def register_user():
+    """Displays a registration form and creates a new user."""
+    username = st.text_input("Username", key="register_username")
+    password = st.text_input("Password", type="password", key="register_password")
+    password_confirm = st.text_input("Confirm Password", type="password", key="register_password_confirm")
+    if st.button("Register"):
+        if password != password_confirm:
+            st.error("Passwords do not match.")
+        elif create_user(username, password):
+            st.success("User registered successfully!")
+        else:
+            st.error("Registration failed.")
+
+def login_user():
+    """Displays a login form and authenticates the user."""
+    username = st.text_input("Username", key="login_username")
+    password = st.text_input("Password", type="password", key="login_password")
+    if st.button("Login"):
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        try:
+            collection = db["users"]
+            user = collection.find_one({"username": username, "password": hashed_password})
+            if user:
+                st.success("Logged in successfully!")
+                st.session_state.username = username
+                st.rerun()
+            else:
+                st.error("Login failed.")
+        except Exception as e:
+            st.error(f"Error logging in: {e}")
+
+def get_user_balance(username):
+    """Retrieves the user's balance from MongoDB."""
+    try:
+        collection = db["users"]
+        user = collection.find_one({"username": username})
+        if user:
+            return user["balance"]
+        else:
+            return 0
+    except Exception as e:
+        st.error(f"Error getting user balance: {e}")
+        return 0
+
+# MongoDB setup
+MONGODB_URI = "mongodb+srv://damirmikic20:takidaki19841989@varnybet.akthnb4.mongodb.net/?retryWrites=true&w=majority&appName=VarnyBet"  # Replace with your MongoDB connection string
+client = MongoClient(MONGODB_URI)
+db = client.varnybet  # Use the provided database name
+
+def clear_bet_slip():
+    st.session_state.bet_slip = []
+    st.rerun()
+
+def remove_bet(index):
+    st.session_state.bet_slip.pop(index)
+    st.rerun()
+
+def get_user_bets(username):
+    """Retrieves the user's placed bets from MongoDB."""
+    try:
+        collection = db["bets"]
+        user_bets = list(collection.find({"username": username}))
+        return user_bets
+    except Exception as e:
+        st.error(f"Error getting user bets: {e}")
+        return []
+
+# Initialize bet_slip in session state
+if 'bet_slip' not in st.session_state:
+    st.session_state.bet_slip = []
 
 # --- Streamlit App Layout ---
 st.markdown("<h1>VarnyBet</h1>", unsafe_allow_html=True)
 
-data_source_for_parsing = CSV_CONTENT # Fallback to string content
-
-
-parsed_odds_data = parse_csv_data(data_source_for_parsing)
-
-if not parsed_odds_data:
-    st.warning("No valid player odds data found. Please check the CSV format or upload a valid file.")
+if 'username' not in st.session_state:
+    # Add registration and login forms
+    col1, col2 = st.columns(2)
+    with col1:
+        register_user()
+    with col2:
+        login_user()
 else:
-    # Initialize bet_slip in session state
-    if 'bet_slip' not in st.session_state:
-        st.session_state.bet_slip = []
-
-    def add_bet(player, odd_type, odd_value):
-        bet = {"player": player, "odd_type": odd_type, "odd_value": odd_value}
-        # Check if there's already a bet for this player
-        for i, existing_bet in enumerate(st.session_state.bet_slip):
-            if existing_bet['player'] == player:
-                # Replace the existing bet with the new one
-                st.session_state.bet_slip[i] = bet
-                st.rerun()
-                return
-        # If no existing bet, add the new bet
-        st.session_state.bet_slip.append(bet)
+    st.write(f"<p style='color: white;'>Zdravo, {st.session_state.username}!</p>", unsafe_allow_html=True)
+    balance = get_user_balance(st.session_state.username)
+    st.markdown(f"<p style='color: white;'>Stanje: {balance} merkuraca</p>", unsafe_allow_html=True)
+    if st.button("Logout"):
+        del st.session_state.username
         st.rerun()
 
-    def remove_bet(index):
-        del st.session_state.bet_slip[index]
-        st.rerun()
+    # Make the sidebar collapsible by default
+    data_source_for_parsing = CSV_CONTENT  # Fallback to string content
+    parsed_odds_data = parse_csv_data(data_source_for_parsing)
+    with st.sidebar:
+        st.header("Bet Slip")
 
-    def clear_bet_slip():
-        st.session_state.bet_slip = []
-        st.rerun()
+        # Add a button to toggle the visibility of the bet slip
+        if 'show_bet_slip' not in st.session_state:
+            st.session_state.show_bet_slip = True
 
-    for league, players in parsed_odds_data.items():
-        if not players:
-            continue
+        if st.button(f"Hide Bet Slip" if st.session_state.show_bet_slip else "Show Bet Slip"):
+            st.session_state.show_bet_slip = not st.session_state.show_bet_slip
 
-        st.markdown(f"<div class='league-header'>{league}</div>", unsafe_allow_html=True)
+        if st.session_state.show_bet_slip:
+            st.markdown("<div class='bet-slip'>", unsafe_allow_html=True)
 
-        num_columns = 3  # Using 3 columns for a more compact view
-        cols = st.columns(num_columns)
-        col_idx = 0
+            # Calculate total odds and handle bet removal
+            total_odds = 1.0
+            bets_to_remove = []
+            for i, bet in enumerate(st.session_state.bet_slip):
+                st.markdown(f"""<div class='bet-slip-item'>
+                                        <span style="color: #6b8a73;">{bet['player']} - {bet['odd_type']} ({bet['odd_value']:.2f})</span>
+                                        </div>""", unsafe_allow_html=True)
+                if st.button(f"Remove {i}", key=f"remove_{i}"):
+                    bets_to_remove.append(i)
 
-        for player_bet in players:
-            # Cycle through columns
-            current_col = cols[col_idx % num_columns]
-            with current_col:
-                st.markdown(f"""
-                    <div class='bet-card'>
-                        <div class='match-info'>{player_bet['date']} - {player_bet['time']}</div>
-                        <div class='player-name'>{player_bet['player']}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                if st.button(f"UNDER {player_bet['gr']:.1f} - {player_bet['under_odd']:.2f}", key=f"under_{player_bet['player']}_{col_idx}"):
-                    add_bet(player_bet['player'], "Under", player_bet['under_odd'])
-                if st.button(f"OVER {player_bet['gr']:.1f} - {player_bet['over_odd']:.2f}", key=f"over_{player_bet['player']}_{col_idx}"):
-                    add_bet(player_bet['player'], "Over", player_bet['over_odd'])
-                col_idx += 1
-
-        # Fill remaining columns in the last row with empty placeholders if needed
-        # This helps maintain a consistent grid structure visually
-        while col_idx % num_columns != 0:
-            with cols[col_idx % num_columns]:
-                st.empty()
-            col_idx += 1
-
-    # --- Bet Slip ---
-    st.sidebar.header("Bet Slip")
-
-    if st.session_state.bet_slip:
-        st.sidebar.markdown("<div class='bet-slip'>", unsafe_allow_html=True)
-        total_odds = 1.0
-        for i, bet in enumerate(st.session_state.bet_slip):
-            st.sidebar.markdown(f"""<div class='bet-slip-item'>
-                                    <span style="color: #6b8a73;">{bet['player']} - {bet['odd_type']} ({bet['odd_value']:.2f})</span>
-                                    </div>""", unsafe_allow_html=True)
-            if st.button(f"Remove {i}", key=f"remove_{i}"):
+            # Remove bets after calculating total odds to avoid incorrect total
+            for i in sorted(bets_to_remove, reverse=True):
                 remove_bet(i)
-            total_odds *= bet['odd_value']
-        st.sidebar.markdown("</div>", unsafe_allow_html=True)
-        st.sidebar.markdown(f"**Total Odds: {total_odds:.2f}**", unsafe_allow_html=True)
+
+            total_odds = 1.0
+            for bet in st.session_state.bet_slip:
+                total_odds *= bet['odd_value']
+            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(f"**Total Odds: {total_odds:.2f}**", unsafe_allow_html=True)
+        else:
+            st.info("Your bet slip is empty.")
+
+        if st.button("Clear Bet Slip"):
+            clear_bet_slip()
+
+        bet_amount = st.number_input("Enter bet amount", min_value=1, max_value=balance, value=1)
+
+        if st.button("Place Bet"):
+            if not st.session_state.bet_slip:
+                st.error("Please add bets to the bet slip.")
+            elif bet_amount > balance:
+                st.error("Insufficient balance.")
+            else:
+                # Deduct bet amount from user balance
+                new_balance = balance - bet_amount
+                try:
+                    collection = db["users"]
+                    collection.update_one({"username": st.session_state.username}, {"$set": {"balance": new_balance}})
+
+                    # Store bet details in "bets" collection
+                    bets_collection = db["bets"]
+                    bet_details = {
+                        "username": st.session_state.username,
+                        "bet_amount": bet_amount,
+                        "bets": st.session_state.bet_slip,
+                        "timestamp": pd.Timestamp.now()
+                    }
+                    bets_collection.insert_one(bet_details)
+
+                    st.success(f"Bet placed successfully! New balance: {new_balance} coins")
+                    clear_bet_slip()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error placing bet: {e}")
+
+        if st.button("Show Placed Bets"):
+            user_bets = get_user_bets(st.session_state.username)
+            if user_bets:
+                st.write("Your Placed Bets:")
+                for bet in user_bets:
+                    st.write(f"Bet Amount: {bet['bet_amount']}")
+                    st.write("Bets:")
+                    for b in bet['bets']:
+                        st.write(f"- {b['player']} - {b['odd_type']} ({b['odd_value']})")
+                    st.write(f"Timestamp: {bet['timestamp']}")
+                    st.write("---")
+            else:
+                st.info("No bets placed yet.")
+
+    if not parsed_odds_data:
+        st.warning("No valid player odds data found. Please check the CSV format or upload a valid file.")
     else:
-        st.sidebar.info("Your bet slip is empty.")
+        # Initialize bet_slip in session state
 
-    if st.sidebar.button("Clear Bet Slip"):
-        clear_bet_slip()
+        def add_bet(player, odd_type, odd_value):
+            bet = {"player": player, "odd_type": odd_type, "odd_value": odd_value}
+            # Check if there's already a bet for this player
+            for i, existing_bet in enumerate(st.session_state.bet_slip):
+                if existing_bet['player'] == player:
+                    # Replace the existing bet with the new one
+                    st.session_state.bet_slip[i] = bet
+                    st.rerun()
+                    return
+            # If no existing bet, add the new bet
+            st.session_state.bet_slip.append(bet)
+            st.rerun()
 
-# --- Footer ---
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: #718096; font-size: 0.8em;'>Odds data displayed for informational purposes.</div>", unsafe_allow_html=True)
+        team_icons = {
+            "Kvoteri": "👕",  # Shirt emoji for Kvoteri
+            "Gaucosi": "👚",  # Different shirt emoji for Gaucosi
+        }
+
+        for league, players in parsed_odds_data.items():
+            if not players:
+                continue
+
+            st.markdown(f"<div class='league-header'>{league}</div>", unsafe_allow_html=True)
+
+            num_columns = 3  # Using 3 columns for a more compact view
+            cols = st.columns(num_columns)
+            col_idx = 0
+
+            for player_bet in players:
+                # Cycle through columns
+                current_col = cols[col_idx % num_columns]
+                with current_col:
+                    team_icon = team_icons.get(player_bet['team'], "")  # Get team icon or empty string
+                    st.markdown(f"""
+                        <div class='bet-card'>
+                            <div class='match-info'>{player_bet['date']} - {player_bet['time']}</div>
+                            <div class='player-name'><span class='team-icon'>{team_icon}</span>{player_bet['player']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    if st.button(f"MANJE {player_bet['gr']:.1f} - {player_bet['under_odd']:.2f}", key=f"under_{player_bet['player']}_{col_idx}"):
+                        add_bet(player_bet['player'], "Under", player_bet['under_odd'])
+                    if st.button(f"VIŠE {player_bet['gr']:.1f} - {player_bet['over_odd']:.2f}", key=f"over_{player_bet['player']}_{col_idx}"):
+                        add_bet(player_bet['player'], "Over", player_bet['over_odd'])
+                    col_idx += 1
+
+    # --- Footer ---
+    st.markdown("---")
+    st.markdown("<div style='text-align: center; color: #718096; font-size: 0.8em;'>Odds data displayed for informational purposes.</div>", unsafe_allow_html=True)
